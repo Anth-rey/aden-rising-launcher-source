@@ -1,0 +1,376 @@
+<Application x:Class="AdenRising.Updater.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+  <Application.Resources>
+
+    <SolidColorBrush x:Key="Ivory"       Color="#EEE8DC"/>
+    <SolidColorBrush x:Key="Paper"       Color="#F5F1E8"/>
+    <SolidColorBrush x:Key="Charcoal"    Color="#171714"/>
+    <SolidColorBrush x:Key="Gold"        Color="#B88A45"/>
+    <SolidColorBrush x:Key="GoldDark"    Color="#8E672E"/>
+    <SolidColorBrush x:Key="Crimson"     Color="#A62130"/>
+    <SolidColorBrush x:Key="CrimsonDark" Color="#861824"/>
+    <SolidColorBrush x:Key="Muted"       Color="#6F6A61"/>
+    <SolidColorBrush x:Key="Body"        Color="#514E48"/>
+    <SolidColorBrush x:Key="Line"        Color="#29171714"/>
+    <SolidColorBrush x:Key="Online"      Color="#3B9B62"/>
+    <SolidColorBrush x:Key="StatLabel"   Color="#817B70"/>
+
+    <!-- The three .otf files register as ONE family, "Nimbus Sans", with the
+         narrow cuts exposed as SemiCondensed inside it. There is no separate
+         "Nimbus Sans Narrow" family to ask for, and asking for one fell back
+         to the system font without a word, which is exactly why the headings
+         had lost their character. Display type is this family at
+         SemiCondensed plus Bold. -->
+    <FontFamily x:Key="Face">/Assets/Fonts/#Nimbus Sans</FontFamily>
+
+    <Style x:Key="DisplayText" TargetType="TextBlock">
+      <Setter Property="FontFamily" Value="{StaticResource Face}"/>
+      <Setter Property="FontStretch" Value="SemiCondensed"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
+
+    <!-- The site's eyebrow is 14px crimson at 0.32em tracking with a 45px rule
+         set into it not a small gold caption, which is what this had before. -->
+    <Style x:Key="EyebrowText" TargetType="TextBlock" BasedOn="{StaticResource DisplayText}">
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="Foreground" Value="{StaticResource Crimson}"/>
+    </Style>
+
+    <Style x:Key="H1" TargetType="TextBlock" BasedOn="{StaticResource DisplayText}">
+      <Setter Property="FontSize" Value="38"/>
+      <Setter Property="LineHeight" Value="41"/>
+      <Setter Property="Foreground" Value="{StaticResource Charcoal}"/>
+    </Style>
+
+    <Style x:Key="StatLabelText" TargetType="TextBlock" BasedOn="{StaticResource DisplayText}">
+      <Setter Property="FontSize" Value="10"/>
+      <Setter Property="Foreground" Value="{StaticResource StatLabel}"/>
+      <Setter Property="Margin" Value="0,0,0,10"/>
+    </Style>
+
+    <Style x:Key="StatValueText" TargetType="TextBlock" BasedOn="{StaticResource DisplayText}">
+      <Setter Property="FontSize" Value="32"/>
+      <Setter Property="Foreground" Value="{StaticResource Ivory}"/>
+    </Style>
+
+    <Style x:Key="Caption" TargetType="TextBlock">
+      <Setter Property="FontFamily" Value="{StaticResource Face}"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+    </Style>
+
+    <Style x:Key="Lead" TargetType="TextBlock">
+      <Setter Property="FontFamily" Value="{StaticResource Face}"/>
+      <Setter Property="FontSize" Value="15"/>
+      <Setter Property="LineHeight" Value="25"/>
+      <Setter Property="Foreground" Value="{StaticResource Body}"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <!-- The site's button: label left, arrow right, square corners, a sheen
+         sweeping across on hover and an arrow that nudges with it. -->
+    <Style x:Key="BtnBase" TargetType="Button">
+      <Setter Property="FontFamily" Value="{StaticResource Face}"/>
+      <Setter Property="FontStretch" Value="SemiCondensed"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="MinHeight" Value="66"/>
+      <Setter Property="SnapsToDevicePixels" Value="True"/>
+      <!-- Out of reach of the keyboard, on purpose. A button that can hold
+           focus is one that Space and Enter press, and the button this window
+           opens with either launches the game or starts a six gigabyte
+           download. Neither should happen because somebody leaned on a key.
+           Every one of these is a deliberate click. -->
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    ClipToBounds="True">
+              <Grid>
+                <Rectangle x:Name="Sheen" IsHitTestVisible="False" Opacity="0">
+                  <Rectangle.Fill>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                      <GradientStop Color="#00FFFFFF" Offset="0.30"/>
+                      <GradientStop Color="#2EFFFFFF" Offset="0.50"/>
+                      <GradientStop Color="#00FFFFFF" Offset="0.70"/>
+                    </LinearGradientBrush>
+                  </Rectangle.Fill>
+                  <Rectangle.RenderTransform><TranslateTransform X="-800"/></Rectangle.RenderTransform>
+                </Rectangle>
+
+                <Grid Margin="28,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <ContentPresenter Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                  <Path x:Name="Arrow" Grid.Column="1" Margin="34,0,0,0" VerticalAlignment="Center"
+                        Data="M4,10 H15 M11,5 L16,10 L11,15"
+                        Stroke="{TemplateBinding Foreground}" StrokeThickness="1.8"
+                        Width="20" Height="20" Stretch="None"
+                        RenderTransformOrigin="0.5,0.5">
+                    <Path.RenderTransform><TranslateTransform X="0"/></Path.RenderTransform>
+                  </Path>
+                </Grid>
+              </Grid>
+            </Border>
+
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Trigger.EnterActions>
+                  <BeginStoryboard>
+                    <Storyboard>
+                      <DoubleAnimation Storyboard.TargetName="Sheen" Storyboard.TargetProperty="Opacity"
+                                       To="1" Duration="0:0:0.04"/>
+                      <DoubleAnimation Storyboard.TargetName="Sheen"
+                                       Storyboard.TargetProperty="RenderTransform.X"
+                                       From="-800" To="800" Duration="0:0:0.60">
+                        <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
+                      </DoubleAnimation>
+                      <DoubleAnimation Storyboard.TargetName="Arrow"
+                                       Storyboard.TargetProperty="RenderTransform.X"
+                                       To="5" Duration="0:0:0.18"/>
+                    </Storyboard>
+                  </BeginStoryboard>
+                </Trigger.EnterActions>
+                <Trigger.ExitActions>
+                  <BeginStoryboard>
+                    <Storyboard>
+                      <DoubleAnimation Storyboard.TargetName="Arrow"
+                                       Storyboard.TargetProperty="RenderTransform.X"
+                                       To="0" Duration="0:0:0.18"/>
+                    </Storyboard>
+                  </BeginStoryboard>
+                </Trigger.ExitActions>
+              </Trigger>
+
+              <!-- The arrow reads as "go on then". Pause is the one button here
+                   that means the opposite, so it says so by not having one. -->
+              <Trigger Property="Tag" Value="noarrow">
+                <Setter TargetName="Arrow" Property="Visibility" Value="Collapsed"/>
+              </Trigger>
+
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Bd" Property="Background" Value="#14171714"/>
+                <Setter TargetName="Bd" Property="BorderBrush" Value="Transparent"/>
+                <Setter Property="Foreground" Value="#4D171714"/>
+                <Setter TargetName="Arrow" Property="Visibility" Value="Collapsed"/>
+                <Setter Property="Cursor" Value="Arrow"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="BtnPrimary" TargetType="Button" BasedOn="{StaticResource BtnBase}">
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="Background" Value="{StaticResource Crimson}"/>
+      <Style.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter Property="Background" Value="{StaticResource CrimsonDark}"/>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style x:Key="BtnOutline" TargetType="Button" BasedOn="{StaticResource BtnBase}">
+      <Setter Property="Foreground" Value="{StaticResource Charcoal}"/>
+      <Setter Property="Background" Value="#33EEE8DC"/>
+      <Setter Property="BorderBrush" Value="#94171714"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Style.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter Property="Background" Value="{StaticResource Charcoal}"/>
+          <Setter Property="BorderBrush" Value="{StaticResource Gold}"/>
+          <Setter Property="Foreground" Value="{StaticResource Ivory}"/>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
+    <!-- Cancel and Browse: present, but not competing with the real action. -->
+    <Style x:Key="BtnQuiet" TargetType="Button">
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="FontFamily" Value="{StaticResource Face}"/>
+      <Setter Property="FontStretch" Value="SemiCondensed"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Padding" Value="22,0"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}">
+              <ContentPresenter Margin="{TemplateBinding Padding}"
+                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Charcoal}"/>
+                <Setter Property="Foreground" Value="{StaticResource Ivory}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="WinBtn" TargetType="Button">
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Width" Value="52"/>
+      <Setter Property="Height" Value="60"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Foreground" Value="#85EEE8DC"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#14FFFFFF"/>
+                <Setter Property="Foreground" Value="{StaticResource Ivory}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="CloseBtn" TargetType="Button" BasedOn="{StaticResource WinBtn}">
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" Background="Transparent">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Crimson}"/>
+                <Setter Property="Foreground" Value="White"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- The default Windows checkbox is a rounded blue thing from another
+         program. This is the square from the design. -->
+    <Style x:Key="SquareCheck" TargetType="CheckBox">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Foreground" Value="{StaticResource Charcoal}"/>
+      <Setter Property="FontFamily" Value="{StaticResource Face}"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <StackPanel Orientation="Horizontal" Background="Transparent">
+              <Border x:Name="Box" Width="20" Height="20" BorderThickness="1"
+                      BorderBrush="#73171714" Background="{StaticResource Paper}"
+                      VerticalAlignment="Center" SnapsToDevicePixels="True">
+                <!-- Width/Height plus Stretch=None so the tick is placed by its own
+                     coordinates. Without them WPF centres the geometry bounding box,
+                     which is 12x9 inside a 20x20 box, and the tick sits off centre. -->
+                <Path x:Name="Tick" Data="M4.5,10.5 L8.5,14.5 L15.5,5.5" Stroke="#EEE8DC"
+                      Width="20" Height="20" Stretch="None"
+                      StrokeThickness="2.2" StrokeStartLineCap="Square" StrokeEndLineCap="Square"
+                      Opacity="0"/>
+              </Border>
+              <ContentPresenter Margin="12,0,0,0" VerticalAlignment="Center"/>
+            </StackPanel>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Box" Property="Background" Value="{StaticResource Charcoal}"/>
+                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Charcoal}"/>
+                <Trigger.EnterActions>
+                  <BeginStoryboard>
+                    <Storyboard>
+                      <DoubleAnimation Storyboard.TargetName="Tick" Storyboard.TargetProperty="Opacity"
+                                       To="1" Duration="0:0:0.12"/>
+                    </Storyboard>
+                  </BeginStoryboard>
+                </Trigger.EnterActions>
+                <Trigger.ExitActions>
+                  <BeginStoryboard>
+                    <Storyboard>
+                      <DoubleAnimation Storyboard.TargetName="Tick" Storyboard.TargetProperty="Opacity"
+                                       To="0" Duration="0:0:0.10"/>
+                    </Storyboard>
+                  </BeginStoryboard>
+                </Trigger.ExitActions>
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Gold}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- A news row is a link: it lights up, the cursor changes, and clicking it
+         opens the article. Rows that look like content but do nothing are worse
+         than no rows at all. -->
+    <Style x:Key="NewsItem" TargetType="Button">
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" Background="Transparent"
+                    BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0">
+              <Border x:Name="Bar" BorderBrush="Transparent" BorderThickness="3,0,0,0"
+                      Padding="21,16,24,16">
+                <ContentPresenter/>
+              </Border>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#14B88A45"/>
+                <Setter TargetName="Bar" Property="BorderBrush" Value="{StaticResource Gold}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+
+    <!-- Straight from the site's .section-dark: a gold glow off the top left
+         and repeating hairlines at 118 degrees. It is what stops a large dark
+         area reading as a flat fill. -->
+    <RadialGradientBrush x:Key='DarkGlow' GradientOrigin='0.18,0.12' Center='0.18,0.12'
+                         RadiusX='0.55' RadiusY='1.4'>
+      <GradientStop Color='#16B88A45' Offset='0'/>
+      <GradientStop Color='#00B88A45' Offset='1'/>
+    </RadialGradientBrush>
+
+    <LinearGradientBrush x:Key='DarkWeave' StartPoint='0,0' EndPoint='0.038,0.072' SpreadMethod='Repeat'>
+      <GradientStop Color='#00FFFFFF' Offset='0'/>
+      <GradientStop Color='#00FFFFFF' Offset='0.90'/>
+      <GradientStop Color='#0DFFFFFF' Offset='0.94'/>
+      <GradientStop Color='#00FFFFFF' Offset='0.98'/>
+    </LinearGradientBrush>
+
+    <!-- The light half is not flat either: paper warms very slightly downward. -->
+    <LinearGradientBrush x:Key='PaperFall' StartPoint='0,0' EndPoint='0,1'>
+      <GradientStop Color='#F1ECE1' Offset='0'/>
+      <GradientStop Color='#EEE8DC' Offset='0.45'/>
+      <GradientStop Color='#E7E0D1' Offset='1'/>
+    </LinearGradientBrush>
+
+  </Application.Resources>
+</Application>

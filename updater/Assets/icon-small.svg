@@ -1,0 +1,15 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 100 100'><defs>
+    <linearGradient id='gold' x1='0' y1='0' x2='0' y2='1'>
+      <stop offset='0' stop-color='#E8C88A'/><stop offset='0.45' stop-color='#B88A45'/>
+      <stop offset='0.55' stop-color='#9A6F32'/><stop offset='1' stop-color='#D8B274'/>
+    </linearGradient>
+    <radialGradient id='vig' cx='0.5' cy='0.38' r='0.75'>
+      <stop offset='0' stop-color='#2E2C27'/><stop offset='1' stop-color='#121210'/>
+    </radialGradient>
+  </defs>
+  <rect width='100' height='100' fill='url(#vig)'/>
+  <g transform='translate(-40.25 -19.95) scale(0.6769)'>
+    <path d='M391 209 449 0H536L323 718H232L11 0H93L155 209ZM179 296 274 614 362 296Z' fill='url(#gold)' transform='translate(70 145) scale(0.116 -0.116)'/>
+    <g transform='translate(-299.26 0)'><path d='M62 0H182V280H309C392 278 406 257 405 144C406 76 409 41 419 0H555V19C534 29 530 45 529 108C530 276 520 309 454 344C514 374 545 431 545 514C545 638 472 718 359 718H62ZM182 402V595H336C392 595 422 561 422 498C422 432 392 402 327 402Z' fill='url(#gold)' transform='translate(430.248 145) scale(0.116 -0.116)'/></g>
+  </g>
+</svg>

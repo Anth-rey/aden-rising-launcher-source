@@ -1,0 +1,95 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- Only for NotifyIcon: WPF has no tray icon of its own, and the shell
+         API by hand would be a lot of P/Invoke for something WinForms already
+         does correctly. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Assets\AdenRising.ico</ApplicationIcon>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>AdenRising</AssemblyName>
+    <RootNamespace>AdenRising.Updater</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- What the launcher compares against launcher/latest.json to decide
+         whether to replace itself. Raise it for every released build, or
+         players keep the one they have. -->
+    <Version>1.0.22</Version>
+  </PropertyGroup>
+
+  <!-- The key the launcher shows the website with each window report. Kept
+       out of the source (the repository is public): the official build reads
+       it from LaunchKey.local.props, which is not in git, and bakes it into
+       the assembly metadata, where LaunchReport finds it. A published build
+       without it would be a launcher the server refuses, so publishing stops
+       instead - unless AllowKeylessPublish=true says that is the point. -->
+  <Import Project="LaunchKey.local.props" Condition="Exists('LaunchKey.local.props')" />
+  <ItemGroup Condition="'$(LauncherKey)' != ''">
+    <AssemblyMetadata Include="LauncherKey" Value="$(LauncherKey)" />
+  </ItemGroup>
+  <Target Name="RequireLauncherKey" BeforeTargets="Build"
+          Condition="'$(_IsPublishing)' == 'true' and '$(LauncherKey)' == '' and '$(AllowKeylessPublish)' != 'true'">
+    <Error Text="LauncherKey is not set. Put it in updater\LaunchKey.local.props (see README), or publish with -p:AllowKeylessPublish=true for a build that does not report windows." />
+  </Target>
+
+  <!-- What players download: one self-contained file, with no .NET to install
+       first. These settings lived in a shell history until now, which meant the
+       size of the released .exe depended on who typed the command. The
+       compression flag alone is the difference between 163 MB and 71 MB. -->
+  <PropertyGroup>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <!-- Only while publishing. Pinning the runtime identifier for every build
+       would make a plain `dotnet build` carry its own copy of .NET as well,
+       which is a slow way to find out whether the code compiles. -->
+  <PropertyGroup Condition="'$(_IsPublishing)' == 'true'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+  <!-- The Windows Desktop SDK ships a smaller set of implicit usings than the
+       plain one; these two are what the engine needs. -->
+  <ItemGroup>
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+    <!-- WinForms (in for the tray icon alone) brings its own Application and
+         Brush into scope. Pin both names to the WPF ones here rather than
+         qualifying every use, and let the tray code say WinForms.X where it
+         genuinely wants the other. -->
+    <Using Include="System.Windows.Application" Alias="Application" />
+    <Using Include="System.Windows.Media.Brush" Alias="Brush" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\hero.jpg" />
+    <!-- The real wordmark from the site, rendered from its SVG at 4x so it
+         stays crisp. Typing "ADEN RISING" as text is not the logo. -->
+    <Resource Include="Assets\wordmark.png" />
+    <!-- Also the exe's own icon above; the tray needs it as a resource it can
+         open at runtime. -->
+    <Resource Include="Assets\AdenRising.ico" />
+    <!-- The site ships these. Arial Narrow is not present on every Windows
+         install, so without embedding them the window silently falls back to
+         plain Arial and loses the whole character of the design. -->
+    <Resource Include="Assets\Fonts\*.otf" />
+  </ItemGroup>
+
+</Project>
+
+
+
+
+
+
+
+
+
+
+
+
