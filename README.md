@@ -4,7 +4,7 @@ The Windows launcher for [Aden Rising](https://adenrising.com), a free
 Lineage II (Interlude) server. It installs and updates the game client, keeps
 itself up to date, and starts the game.
 
-Maintained by **Jakub Špirek** (GitHub: [Anth-rey](https://github.com/Anth-rey)).
+Maintained by **Jakub Špírek** (GitHub: [Anth-rey](https://github.com/Anth-rey)).
 
 Official builds are signed as **Open Source Developer** (Certum) and published
 at `https://download.adenrising.com/launcher/AdenRisingLauncher.exe`. This
@@ -71,5 +71,5 @@ started by the official launcher.
 
 ## Licence
 
-The source is under the MIT licence (`LICENSE`), copyright Jakub Špirek. The Aden Rising name, logo and
+The source is under the MIT licence (`LICENSE`), copyright Jakub Špírek. The Aden Rising name, logo and
 artwork are not; see `NOTICE.md`.
