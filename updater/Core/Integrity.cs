@@ -23,13 +23,22 @@ public static class Integrity
         "system/Core.dll",
         "system/l2.ini",
         "system/Interface.u",
+        // The graphics wrapper is the first native DLL the client loads, from
+        // its own folder -- a swapped one runs before the game does.
+        "system/d3d9.dll",
+        "system/dgVoodoo.conf",
     ];
+
+    private static readonly string[] Translation = ["system/d3d9.dll", "system/dgVoodoo.conf"];
 
     /// <returns>The first core file that is missing or not ours, or null when all match.</returns>
     public static async Task<string?> FirstMismatchAsync(string gameDir, Installer installer)
     {
         foreach (var path in Core)
         {
+            // Deliberately removed on this machine (Installer.RefuseTranslation): their absence is the point.
+            if (installer.TranslationRefused && Translation.Contains(path, StringComparer.OrdinalIgnoreCase)) continue;
+
             var expected = installer.RecordedHash(path);
             if (expected is null) continue;   // not part of this install's record: nothing to compare
 

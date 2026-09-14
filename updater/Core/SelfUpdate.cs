@@ -10,7 +10,12 @@ public sealed record LauncherRelease(
     [property: JsonPropertyName("version")] string Version,
     [property: JsonPropertyName("sha256")] string Sha256,
     [property: JsonPropertyName("size")] long Size,
-    [property: JsonPropertyName("path")] string Path);
+    [property: JsonPropertyName("path")] string Path)
+{
+    /// <summary>When the release note was signed; what TrustLog remembers.</summary>
+    [JsonIgnore]
+    public string IssuedAt { get; init; } = "";
+}
 
 /// <summary>
 /// The launcher replacing itself.
@@ -25,6 +30,12 @@ public sealed record LauncherRelease(
 ///
 /// Without this, every fix to the launcher means asking the whole community to
 /// go and fetch a new file, and each of them meets the warning again.
+///
+/// Which also makes this the most dangerous code in the launcher: whatever it
+/// installs, runs. So the release note has to arrive signed by the release key
+/// (Signing), the file it names has to live on our own host over https, and
+/// the bytes have to match the note. Any doubt, and the launcher keeps the
+/// version it has.
 /// </summary>
 public static class SelfUpdate
 {
@@ -35,6 +46,12 @@ public static class SelfUpdate
 
     public static Version Current =>
         Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0, 0);
+
+    /// <summary>The signed release note; the unsigned launcher/latest.json is history.</summary>
+    private const string ReleaseNote = "launcher/latest.v2.json";
+
+    /// <summary>A launcher is 60-80 MB; anything past this is not one of ours.</summary>
+    private const long MaxLauncherBytes = 256L * 1024 * 1024;
 
     private static string OldPath => ExePath + ".old";
     private static string NewPath => ExePath + ".new";
@@ -63,21 +80,40 @@ public static class SelfUpdate
     {
         try
         {
-            var json = await http.GetStringAsync(new Uri(baseUrl, "launcher/latest.json"), ct);
-            var release = JsonSerializer.Deserialize<LauncherRelease>(json);
+            var json = await http.GetStringAsync(new Uri(baseUrl, ReleaseNote), ct);
+            var signed = Signing.Open(json, "launcher");
+            TrustLog.RequireNotOlder("launcher", signed.IssuedAt);
 
+            var release = signed.Body.Deserialize<LauncherRelease>();
             if (release is null
                 || !Version.TryParse(release.Version, out var offered)
-                || release.Sha256.Length != 64
-                || release.Size <= 0)
+                || release.Sha256.Length != 64 || !release.Sha256.All(Uri.IsHexDigit)
+                || release.Size <= 0 || release.Size > MaxLauncherBytes
+                || !IsOurs(baseUrl, release.Path))
                 return null;
 
-            return offered > Current ? release : null;
+            return offered > Current ? release with { IssuedAt = signed.IssuedAt } : null;
         }
         catch
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// The file a release note names has to sit on the same host the note
+    /// came from, reached over https, under a plain relative path. A note
+    /// that pointed anywhere else would be one somebody else wrote.
+    /// </summary>
+    private static bool IsOurs(Uri baseUrl, string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path.Length > 200) return false;
+        if (path.Contains("..") || path.Contains(':') || path.Contains('\\')) return false;
+        if (path.StartsWith('/') || path.StartsWith("//")) return false;
+        if (!Uri.TryCreate(baseUrl, path, out var resolved)) return false;
+        return resolved.Scheme == Uri.UriSchemeHttps
+            && resolved.Host.Equals(baseUrl.Host, StringComparison.OrdinalIgnoreCase)
+            && baseUrl.IsBaseOf(resolved);
     }
 
     /// <summary>
@@ -92,6 +128,7 @@ public static class SelfUpdate
         Action<long, long>? onProgress = null, CancellationToken ct = default)
     {
         ForgetPrevious();
+        if (!IsOurs(baseUrl, release.Path)) return false;
 
         try
         {
@@ -104,7 +141,8 @@ public static class SelfUpdate
         }
 
         var actual = await BlobStore.HashFileAsync(NewPath, ct);
-        if (!actual.Equals(release.Sha256, StringComparison.OrdinalIgnoreCase))
+        if (new FileInfo(NewPath).Length != release.Size
+            || !actual.Equals(release.Sha256, StringComparison.OrdinalIgnoreCase))
         {
             // Whatever that file is, it is not the launcher we were promised,
             // and it is the one thing here that must never be run on trust.
@@ -138,6 +176,7 @@ public static class SelfUpdate
             return false;
         }
 
+        TrustLog.Accept("launcher", release.IssuedAt);
         Relaunch();
         return true;
     }
@@ -174,8 +213,10 @@ public static class SelfUpdate
         int read;
         while ((read = await source.ReadAsync(buffer, ct)) > 0)
         {
-            await target.WriteAsync(buffer.AsMemory(0, read), ct);
             done += read;
+            // The note said how big it is; a stream that keeps going is not it.
+            if (done > expected) throw new InvalidDataException("the download is larger than the release note says");
+            await target.WriteAsync(buffer.AsMemory(0, read), ct);
             onProgress?.Invoke(done, expected);
         }
     }

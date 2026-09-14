@@ -48,7 +48,7 @@ public static class LaunchReport
     /// windows as not started by the launcher.
     /// </summary>
     private static readonly string Key =
-        Environment.GetEnvironmentVariable("ADENRISING_LAUNCHER_KEY")
+        Override("ADENRISING_LAUNCHER_KEY")
         ?? typeof(LaunchReport).Assembly
             .GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false)
             .OfType<System.Reflection.AssemblyMetadataAttribute>()
@@ -56,7 +56,18 @@ public static class LaunchReport
         ?? "";
 
     private static readonly string Endpoint =
-        (Environment.GetEnvironmentVariable("ADENRISING_SITE_URL") ?? "https://adenrising.com").TrimEnd('/') + "/api/launcher/launch";
+        (Override("ADENRISING_SITE_URL") ?? "https://adenrising.com").TrimEnd('/') + "/api/launcher/launch";
+
+    /// <summary>Debug builds only. A released launcher must not let a variable
+    /// any program can set redirect its reports -- and the key with them.</summary>
+    private static string? Override(string variable)
+    {
+#if DEBUG
+        return Environment.GetEnvironmentVariable(variable);
+#else
+        return null;
+#endif
+    }
 
     /// <summary>
     /// Programs whose presence a GM wants to know about. Names only, as the

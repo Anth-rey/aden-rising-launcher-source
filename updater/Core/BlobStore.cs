@@ -113,6 +113,11 @@ public sealed class BlobStore(HttpClient http, Uri baseUri, string cacheDir)
         int read;
         while ((read = await source.ReadAsync(buffer, ct)) > 0)
         {
+            have += read;
+            // The manifest said how big the file is. A stream that keeps going
+            // past that is not the file, and it should not be allowed to fill
+            // the disk while it says so.
+            if (have > size) throw new InvalidDataException($"{sha256[..12]}: more bytes than the manifest says");
             await target.WriteAsync(buffer.AsMemory(0, read), ct);
             onBytes?.Invoke(read);
         }

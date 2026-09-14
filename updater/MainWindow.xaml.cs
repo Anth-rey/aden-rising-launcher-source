@@ -14,14 +14,20 @@ public sealed record NewsRow(string Date, string Title, string Url);
 public partial class MainWindow : Window
 {
     /// <summary>
-    /// Where the client comes from. Overridable only so it can be pointed at
-    /// tools/serve-mirror.mjs, which exists to break the update path on
-    /// purpose -- dropped connections, throttled speeds, files that vanish
-    /// mid-release -- before real players find those edges instead. Must end
-    /// in a slash.
+    /// Where the client comes from, and where the launcher fetches its own
+    /// replacement. Deliberately two hosts: files.adenrising.net carries the
+    /// game and nothing else. Both must end in a slash.
+    ///
+    /// In a Debug build only, ADENRISING_FILES_URL and ADENRISING_LAUNCHER_URL
+    /// point these at tools/serve-mirror.mjs, which exists to break the update
+    /// path on purpose -- dropped connections, throttled speeds, files that
+    /// vanish mid-release. A released launcher ignores the environment: a
+    /// variable any program on the machine can set must not decide where the
+    /// launcher takes its updates from. (Everything fetched is signed anyway;
+    /// this closes the door twice.)
     /// </summary>
-    private static readonly string BaseUrl =
-        Environment.GetEnvironmentVariable("ADENRISING_FILES_URL") ?? "https://files.adenrising.net/";
+    private static readonly string BaseUrl = Override("ADENRISING_FILES_URL") ?? "https://files.adenrising.net/";
+    private static readonly string LauncherUrl = Override("ADENRISING_LAUNCHER_URL") ?? "https://download.adenrising.com/";
 
     /// <summary>
     /// True when the override above sent us somewhere other than the real
@@ -30,16 +36,16 @@ public partial class MainWindow : Window
     /// it afterwards -- which then looks to the player like their game has
     /// vanished and 6 GB is being fetched all over again. It happened.
     /// </summary>
-    /// <summary>
-    /// Where the launcher fetches its own replacement. Deliberately not the
-    /// same host as the client: files.adenrising.net carries the game and
-    /// nothing else.
-    /// </summary>
-    private static readonly string LauncherUrl =
-        Environment.GetEnvironmentVariable("ADENRISING_LAUNCHER_URL") ?? "https://download.adenrising.com/";
+    private static readonly bool UsingTestMirror = Override("ADENRISING_FILES_URL") is { Length: > 0 };
 
-    private static readonly bool UsingTestMirror =
-        Environment.GetEnvironmentVariable("ADENRISING_FILES_URL") is { Length: > 0 };
+    private static string? Override(string variable)
+    {
+#if DEBUG
+        return Environment.GetEnvironmentVariable(variable);
+#else
+        return null;
+#endif
+    }
     private const string SiteUrl = "https://adenrising.com";
     private const string DefaultFolder = @"C:\Games\Aden Rising";
 
@@ -49,6 +55,7 @@ public partial class MainWindow : Window
     private string _gameDir;
     private Installer _installer = null!;
     private Manifest? _manifest;
+    private string _manifestIssuedAt = "";
     private InstallPlan? _plan;
     private CancellationTokenSource? _cts;
     private bool _paused;
@@ -481,9 +488,14 @@ public partial class MainWindow : Window
         ShowChecking();
         try
         {
+            // Signed, or it is not a manifest (Signing). The plain
+            // manifests/latest.json older launchers read is left where it is.
             var json = await Retry.OnNetworkAsync(
-                token => _http.GetStringAsync(new Uri(new Uri(BaseUrl), "manifests/latest.json"), token));
-            _manifest = Manifest.Parse(json);
+                token => _http.GetStringAsync(new Uri(new Uri(BaseUrl), "manifests/latest.v2.json"), token));
+            var (manifest, issuedAt) = Manifest.ParseSigned(json);
+            TrustLog.RequireNotOlder("manifest", issuedAt);
+            _manifest = manifest;
+            _manifestIssuedAt = issuedAt;
 
             // Our own record is the fast path, but it must not be the only
             // thing we trust: if it is missing while a client is plainly
@@ -549,6 +561,7 @@ public partial class MainWindow : Window
             {
                 // Nothing moved, but this may still be a newer manifest.
                 await _installer.RecordAsync(_manifest!);
+                TrustLog.Accept("manifest", _manifestIssuedAt);
                 // An install made before the launcher started keeping a copy of
                 // itself in the game folder has nothing to move either, so this
                 // is the only path by which those players ever get one.
@@ -636,6 +649,7 @@ public partial class MainWindow : Window
             done = plan.Bytes;
             Paint();
 
+            TrustLog.Accept("manifest", _manifestIssuedAt);
             if (!UsingTestMirror) Settings.WriteLocation(_gameDir);
             Settle(shortcutsAsked: ShortcutCheck.IsChecked == true);
 
@@ -791,6 +805,7 @@ public partial class MainWindow : Window
             {
                 // Nothing moved, but this may still be a newer manifest.
                 await _installer.RecordAsync(_manifest!);
+                TrustLog.Accept("manifest", _manifestIssuedAt);
                 ShowReady(_manifest!.Version);
                 return;
             }
