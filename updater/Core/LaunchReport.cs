@@ -161,29 +161,87 @@ public static class LaunchReport
     })
     { Timeout = TimeSpan.FromSeconds(20) };
 
+    /// <summary>
+    /// Seconds between attempts. One report used to be sent once and forgotten;
+    /// a website that was slow for a moment, or refused the report while it
+    /// re-read its key list, meant no record for the window and the player
+    /// was refused at EnterWorld (twice on 2026-09-14). The game server now
+    /// waits about half a minute for a late record, so a few retries within
+    /// that window are what it takes.
+    /// </summary>
+    private static readonly int[] RetryDelays = [1, 2, 4, 6, 8];
+
     private static async Task ReportAsync(string hwid, string clientBuild, Process game, string gameDir, int localPort)
     {
         var http = Ipv4Http;
+        var signals = Signals(game, gameDir);
+        for (var attempt = 0; ; attempt++)
+        {
+            string outcome;
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint);
+                request.Headers.Add("x-launcher-key", Key);
+                request.Content = JsonContent.Create(new
+                {
+                    hwid,
+                    clientBuild,
+                    launcherBuild = LauncherVersion(),
+                    pid = game.Id,
+                    localPort,
+                    signals,
+                });
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                using var response = await http.SendAsync(request, cts.Token);
+                if (response.IsSuccessStatusCode)
+                {
+                    Log($"port {localPort}: reported (attempt {attempt + 1})");
+                    return;
+                }
+                // The report itself is wrong (a malformed field): sending it again changes nothing.
+                if ((int)response.StatusCode == 400)
+                {
+                    Log($"port {localPort}: refused as invalid (HTTP 400), not retried");
+                    return;
+                }
+                outcome = $"HTTP {(int)response.StatusCode}";
+            }
+            catch (Exception e)
+            {
+                // Offline, or the site is down: the game still runs; see the class comment.
+                outcome = e.GetType().Name;
+            }
+
+            if (attempt >= RetryDelays.Length)
+            {
+                Log($"port {localPort}: gave up after {attempt + 1} attempts ({outcome})");
+                return;
+            }
+            Log($"port {localPort}: {outcome}, retrying in {RetryDelays[attempt]}s");
+            await Task.Delay(TimeSpan.FromSeconds(RetryDelays[attempt]));
+        }
+    }
+
+    /// <summary>
+    /// A few lines per game start in %LOCALAPPDATA%\Aden Rising\launch-report.log,
+    /// so "the server said I did not use the launcher" can be checked against
+    /// what the launcher actually managed to send. Kept under 64 KB.
+    /// </summary>
+    private static readonly string LogPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Aden Rising", "launch-report.log");
+
+    private static void Log(string line)
+    {
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint);
-            request.Headers.Add("x-launcher-key", Key);
-            request.Content = JsonContent.Create(new
-            {
-                hwid,
-                clientBuild,
-                launcherBuild = LauncherVersion(),
-                pid = game.Id,
-                localPort,
-                signals = Signals(game, gameDir),
-            });
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            using var response = await http.SendAsync(request, cts.Token);
-            // A refusal is the server's to explain, in game. Nothing to show here.
+            Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
+            if (File.Exists(LogPath) && new FileInfo(LogPath).Length > 64 * 1024)
+                File.WriteAllText(LogPath, "");
+            File.AppendAllText(LogPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {line}{Environment.NewLine}");
         }
         catch
         {
-            // Offline, or the site is down: the game still runs; see the class comment.
+            // A log that cannot be written is not worth a failed report.
         }
     }
 

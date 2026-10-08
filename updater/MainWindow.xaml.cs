@@ -817,7 +817,33 @@ public partial class MainWindow : Window
         _paused = true;
         _cts?.Cancel();
         var installed = _installer.InstalledVersion();
-        if (installed is null) ShowFirstRun(); else ShowReady(installed);
+        if (installed is null) ShowFirstRun();
+        // Stopped half way to a newer client: offering Play here would start the old one.
+        else if (_manifest is not null && installed != _manifest.Version)
+            ShowError("Aden Rising", "Not finished", "The update is not ", "finished",
+                "The game needs the whole update before it can start. Press Try again to finish it; "
+                + "everything already downloaded is kept.");
+        else ShowReady(installed);
+    }
+
+    /// <summary>
+    /// True when the server holds a newer client than the one on disk. Anything
+    /// that goes wrong asking says false: an unreachable update server is no
+    /// reason to stop somebody playing what they have.
+    /// </summary>
+    private async Task<bool> ClientOutdatedAsync()
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+            var json = await _http.GetStringAsync(new Uri(new Uri(BaseUrl), "manifests/latest.v2.json"), cts.Token);
+            var (manifest, _) = Manifest.ParseSigned(json);
+            return manifest.Version != _installer.InstalledVersion();
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private async void Retry_Click(object sender, RoutedEventArgs e) => await CheckAsync();

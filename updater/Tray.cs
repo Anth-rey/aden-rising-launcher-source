@@ -62,6 +62,17 @@ public partial class MainWindow
         PlayButton.IsEnabled = false;
         try
         {
+            // The window may have sat open, or in the tray, since long before the
+            // last client release, and Play would start whatever is on disk. A
+            // client that old is not one the server or Windows will put up with.
+            // Not while a window is already up: its files cannot be replaced,
+            // and a second window has to match the first anyway.
+            if (!AnyGameRunning() && await ClientOutdatedAsync())
+            {
+                await CheckAsync();
+                return;
+            }
+
             var changed = await Integrity.FirstMismatchAsync(_gameDir, _installer);
             if (changed is not null)
             {
@@ -176,7 +187,14 @@ public partial class MainWindow
                 if (show is null) return;   // handed off to a self-update
                 try { show.WaitOne(); } catch { return; }
                 if (App.ShowEvent is null) return;
-                Dispatcher.Invoke(RestoreFromTray);
+                Dispatcher.Invoke(async () =>
+                {
+                    RestoreFromTray();
+                    // Opened again from the desktop: to the player this is a fresh start,
+                    // so look for a new client as a fresh start would.
+                    if (PlayButton.Visibility == Visibility.Visible && !AnyGameRunning() && await ClientOutdatedAsync())
+                        await CheckAsync();
+                });
             }
         })
         { IsBackground = true, Name = "show-request" };
