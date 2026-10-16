@@ -100,6 +100,7 @@ public partial class MainWindow : Window
             };
             beat.Tick += (_, _) => _ = RefreshStatusAsync();
             beat.Start();
+            StartUpdateWatch();
 
             await CheckAsync();
         };

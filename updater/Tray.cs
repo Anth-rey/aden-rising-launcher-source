@@ -38,6 +38,13 @@ public partial class MainWindow
             Visible = false,
         };
         _tray.DoubleClick += (_, _) => Dispatcher.Invoke(RestoreFromTray);
+        // Update balloons (UpdateWatch): a click opens the launcher, and an icon put up just for the
+        // balloon goes away with it.
+        _tray.BalloonTipClicked += (_, _) => Dispatcher.Invoke(RestoreFromTray);
+        _tray.BalloonTipClosed += (_, _) => Dispatcher.Invoke(() =>
+        {
+            if (_tray is not null && !AnyGameRunning()) _tray.Visible = false;
+        });
     }
 
     private static System.Drawing.Icon LoadIcon()
