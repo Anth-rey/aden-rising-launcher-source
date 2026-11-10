@@ -106,8 +106,10 @@ public partial class MainWindow
 
     /// <summary>Starts a game window. Called by Play and by the tray menu, so a
     /// second one costs the player one click.</summary>
-    private bool LaunchGame()
+    private bool LaunchGame(StartMode? retryAs = null)
     {
+        // The way this computer is known to need (StartHelp), or the one a failed start is being retried with.
+        var mode = retryAs ?? StartHelp.Saved(_gameDir);
         var exe = Path.Combine(_gameDir, "system", "L2.exe");
         if (!File.Exists(exe))
         {
@@ -145,7 +147,8 @@ public partial class MainWindow
         // Watched by polling rather than Process.Exited: the game asks for
         // administrator rights, and a process running at a higher integrity
         // level does not hand its parent a handle to wait on.
-        lock (_gamesLock) _games.Add(new Running(game.Id, Stopwatch.GetTimestamp()));
+        if (mode == StartMode.OneCore) HoldToOneCore(game);
+        lock (_gamesLock) _games.Add(new Running(game.Id, Stopwatch.GetTimestamp(), mode, retryAs is not null));
         StartWatching();
 
         // Tell the server this window is ours, the moment it connects (AntiBot).
@@ -222,10 +225,113 @@ public partial class MainWindow
         QuitForGood();
     }
 
-    /// <summary>One game window we started, and when.</summary>
-    private readonly record struct Running(int Pid, long StartedAt);
+    /// <summary>One game window we started, when, which way, and whether that way is still on trial.</summary>
+    private readonly record struct Running(int Pid, long StartedAt, StartMode Mode = StartMode.Normal, bool Trial = false);
 
     private System.Windows.Threading.DispatcherTimer? _watch;
+
+    /// <summary>Games that have put a window on the screen at least once.</summary>
+    private readonly HashSet<int> _windowSeen = [];
+    private static readonly TimeSpan StuckAfter = TimeSpan.FromSeconds(40);
+
+    /// <summary>
+    /// A game that never opened a window: closed, and started again another way without the player having to do
+    /// anything (one core first, then without the graphics wrapper). What works is remembered for this computer and
+    /// reported to us; only when nothing is left does the player get a message.
+    /// </summary>
+    private void GameStuck(Running run)
+    {
+        try
+        {
+            using var p = Process.GetProcessById(run.Pid);
+            p.Kill();
+        }
+        catch { /* gone already, or out of our reach */ }
+
+        int left;
+        lock (_gamesLock)
+        {
+            _games.Remove(run);
+            left = _games.Count;
+        }
+        _windowSeen.Remove(run.Pid);
+        UpdateTrayText();
+
+        var build = _installer.InstalledVersion() ?? "";
+        var translationInPlace = !_installer.TranslationRefused && File.Exists(Path.Combine(_gameDir, "system", "d3d9.dll"));
+        // A remembered way that stopped working starts over from the plain one.
+        if (!run.Trial && run.Mode != StartMode.Normal) StartHelp.Save(_gameDir, StartMode.Normal);
+        // Taking the graphics wrapper off was a guess; it did not help, so it goes back with the next file check.
+        if (run.Trial && run.Mode == StartMode.NoTranslation) _installer.AcceptTranslation();
+        var next = StartHelp.After(run.Mode, translationInPlace);
+        LaunchReport.ReportStart(build, run.Mode.ToString(), next is null ? "stuck-gave-up" : "stuck");
+
+        if (next is { } mode)
+        {
+            if (mode == StartMode.NoTranslation) _installer.RefuseTranslation();
+            _tray?.ShowBalloonTip(6000, "Aden Rising",
+                "The game did not open its window. Starting it again another way…", WinForms.ToolTipIcon.Info);
+            if (LaunchGame(mode)) return;
+        }
+
+        if (left == 0)
+        {
+            _watch?.Stop();
+            _watch = null;
+        }
+        RestoreFromTray();
+        ShowError("Aden Rising", "Stuck", "The game did not ", "open",
+            "The game started but never showed its window. The launcher closed it and tried starting it other ways, "
+            + "and none of them got it on the screen. We have been told about it; write to us in #help on our Discord "
+            + "and we will get you in.");
+    }
+
+    /// <summary>Keeps a starting game on one processor core; <see cref="ReleaseCores"/> undoes it once its window is up.</summary>
+    private static void HoldToOneCore(Process game)
+    {
+        try { game.ProcessorAffinity = 1; }
+        catch { /* started with more rights than ours, or gone: then this way is simply the plain one */ }
+    }
+
+    private static void ReleaseCores(int pid)
+    {
+        try
+        {
+            using var p = Process.GetProcessById(pid);
+            var all = Environment.ProcessorCount >= 64 ? -1L : (1L << Environment.ProcessorCount) - 1;
+            p.ProcessorAffinity = (IntPtr)all;
+        }
+        catch { /* gone or out of reach */ }
+    }
+
+    /// <summary>The first window of a game: a way that was on trial has proved itself and is kept for this computer.</summary>
+    private void WindowAppeared(Running run)
+    {
+        if (run.Mode == StartMode.OneCore) ReleaseCores(run.Pid);
+        if (!run.Trial) return;
+        // Without the wrapper is remembered by the installer itself (RefuseTranslation); the plain start then works.
+        StartHelp.Save(_gameDir, run.Mode == StartMode.OneCore ? StartMode.OneCore : StartMode.Normal);
+        LaunchReport.ReportStart(_installer.InstalledVersion() ?? "", run.Mode.ToString(), "worked");
+    }
+
+    /// <summary>Whether the process owns a visible top-level window (the splash picture counts).</summary>
+    private static bool HasVisibleWindow(int pid)
+    {
+        var found = false;
+        EnumWindows((hwnd, _) =>
+        {
+            GetWindowThreadProcessId(hwnd, out var owner);
+            if (owner != (uint)pid || !IsWindowVisible(hwnd)) return true;
+            found = true;
+            return false;
+        }, IntPtr.Zero);
+        return found;
+    }
+
+    private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
 
     private void StartWatching()
     {
@@ -244,9 +350,28 @@ public partial class MainWindow
         List<Running> snapshot;
         lock (_gamesLock) snapshot = [.. _games];
 
+        Running? stuck = null;
         foreach (var run in snapshot)
         {
-            if (!IsAlive(run.Pid)) finished.Add(run);
+            if (!IsAlive(run.Pid)) { finished.Add(run); _windowSeen.Remove(run.Pid); continue; }
+
+            // A game that is alive but has shown nothing, not even its splash picture, is not loading: it is stuck
+            // at start-up, burning a core in the background with nothing for the player to see or close (a player's
+            // report, 2026-11-10). Forty seconds is several times what the slowest start takes to put a window up.
+            if (_windowSeen.Contains(run.Pid)) continue;
+            var shown = HasVisibleWindow(run.Pid);
+#if DEBUG
+            // Rehearsal of the stuck path on a healthy computer: ADENRISING_TEST_STUCK=Normal (or OneCore,
+            // "Normal,OneCore") makes a game started that way count as never having opened a window.
+            if ((Environment.GetEnvironmentVariable("ADENRISING_TEST_STUCK") ?? "").Split(',').Contains(run.Mode.ToString())) shown = false;
+#endif
+            if (shown) { _windowSeen.Add(run.Pid); WindowAppeared(run); }
+            else if (Stopwatch.GetElapsedTime(run.StartedAt) > StuckAfter) stuck ??= run;
+        }
+        if (stuck is { } s)
+        {
+            GameStuck(s);
+            return;
         }
         if (finished.Count == 0) return;
 

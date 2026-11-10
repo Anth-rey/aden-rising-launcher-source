@@ -63,6 +63,17 @@ public sealed class Installer(string gameDir, BlobStore blobs)
         catch (UnauthorizedAccessException) { }
     }
 
+    /// <summary>
+    /// Takes the refusal back: the wrapper was removed on a guess that did not help (a game that never opened its
+    /// window still did not), so the next check of the files puts it back like any other missing file.
+    /// </summary>
+    public void AcceptTranslation()
+    {
+        try { File.Delete(NoTranslationPath); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
     private bool Skip(ManifestEntry entry) =>
         TranslationRefused && Translation.Contains(entry.Path, StringComparer.OrdinalIgnoreCase);
 

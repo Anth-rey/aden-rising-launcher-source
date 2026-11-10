@@ -58,6 +58,40 @@ public static class LaunchReport
     private static readonly string Endpoint =
         (Override("ADENRISING_SITE_URL") ?? "https://adenrising.com").TrimEnd('/') + "/api/launcher/launch";
 
+    private static readonly string StartEndpoint =
+        (Override("ADENRISING_SITE_URL") ?? "https://adenrising.com").TrimEnd('/') + "/api/launcher/start-report";
+
+    /// <summary>
+    /// Tells us that a game did not get its window up the plain way on this computer, what the launcher tried and
+    /// whether that worked -- so a start-up problem reaches us even from a player who never writes in. No hardware
+    /// id and nothing about the player: the Windows version, the two builds, the way tried and the outcome.
+    /// Sent once and forgotten; a failure to send is nobody's problem.
+    /// </summary>
+    public static void ReportStart(string clientBuild, string tried, string outcome)
+    {
+        if (Key.Length == 0) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, StartEndpoint);
+                request.Headers.Add("x-launcher-key", Key);
+                request.Content = JsonContent.Create(new
+                {
+                    clientBuild,
+                    launcherBuild = LauncherVersion(),
+                    windows = Environment.OSVersion.Version.ToString(),
+                    tried,
+                    outcome,
+                });
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                using var response = await Ipv4Http.SendAsync(request, cts.Token);
+                Log($"start report {tried}/{outcome}: {(int)response.StatusCode}");
+            }
+            catch (Exception ex) { Log($"start report failed: {ex.Message}"); }
+        });
+    }
+
     /// <summary>Debug builds only. A released launcher must not let a variable
     /// any program can set redirect its reports -- and the key with them.</summary>
     private static string? Override(string variable)
