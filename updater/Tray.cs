@@ -125,6 +125,9 @@ public partial class MainWindow
         // file at all, written for the monitor the player is looking at.
         GameOptions.Correct(_gameDir, Display.ScreenFor(new WindowInteropHelper(this).Handle));
 
+        // A computer that needs the engine without our signature keeps it, an update of the signed one included.
+        if (mode == StartMode.PlainEngine || PlainEngine.InUse(_gameDir)) PlainEngine.Use(_gameDir);
+
         // This start is ours: the client checks for the token and refuses to run without it.
         Presence.Grant(_gameDir);
 
@@ -236,7 +239,8 @@ public partial class MainWindow
 
     /// <summary>
     /// A game that never opened a window: closed, and started again another way without the player having to do
-    /// anything (one core first, then without the graphics wrapper). What works is remembered for this computer and
+    /// anything (one core first, then without the graphics wrapper, then with the engine without our signature). What
+    /// works is remembered for this computer and
     /// reported to us; only when nothing is left does the player get a message.
     /// </summary>
     private void GameStuck(Running run)
@@ -245,6 +249,8 @@ public partial class MainWindow
         {
             using var p = Process.GetProcessById(run.Pid);
             p.Kill();
+            // Its files stay locked until it is gone, and the next way may have to replace one (PlainEngine).
+            p.WaitForExit(5000);
         }
         catch { /* gone already, or out of our reach */ }
 
@@ -263,7 +269,11 @@ public partial class MainWindow
         if (!run.Trial && run.Mode != StartMode.Normal) StartHelp.Save(_gameDir, StartMode.Normal);
         // Taking the graphics wrapper off was a guess; it did not help, so it goes back with the next file check.
         if (run.Trial && run.Mode == StartMode.NoTranslation) _installer.AcceptTranslation();
-        var next = StartHelp.After(run.Mode, translationInPlace);
+        // So was the engine without our signature: the signed one goes back.
+        if (run.Trial && run.Mode == StartMode.PlainEngine) PlainEngine.Drop(_gameDir);
+        var next = StartHelp.After(run.Mode, translationInPlace, PlainEngine.InUse(_gameDir) || run.Mode == StartMode.PlainEngine);
+        // Made from the installed engine on the spot; a file it cannot be made from leaves nothing to try.
+        if (next == StartMode.PlainEngine && !PlainEngine.Use(_gameDir)) next = null;
         LaunchReport.ReportStart(build, run.Mode.ToString(), next is null ? "stuck-gave-up" : "stuck");
 
         if (next is { } mode)

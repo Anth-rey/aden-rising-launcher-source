@@ -102,6 +102,18 @@ public sealed class Installer(string gameDir, BlobStore blobs)
             var full = Path.Combine(gameDir, entry.LocalPath);
             var exists = File.Exists(full);
 
+            // The engine without our signature, on a computer that needed it: not a damaged file to fetch again.
+            // Should the signed engine itself change, the new one is installed and the launcher strips it again.
+            if (exists && PlainEngine.InUse(gameDir) && entry.Path.Equals(PlainEngine.ManifestPath, StringComparison.OrdinalIgnoreCase)
+                && previous is not null && previous.TryGetValue(entry.Path, out var signedBefore)
+                && signedBefore.Sha256.Equals(entry.Sha256, StringComparison.OrdinalIgnoreCase)
+                && PlainEngine.Accepts(gameDir, await BlobStore.HashFileAsync(full, ct)))
+            {
+                upToDate++;
+                checkedFiles?.Report(++done);
+                continue;
+            }
+
             // Settings files are the player's once they exist -- but only once
             // they have actually made them theirs.
             //

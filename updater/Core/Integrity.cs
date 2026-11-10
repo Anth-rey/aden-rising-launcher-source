@@ -43,10 +43,19 @@ public static class Integrity
             if (expected is null) continue;   // not part of this install's record: nothing to compare
 
             var full = Path.Combine(gameDir, path.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(full)) return path;
+            if (!File.Exists(full))
+            {
+                // A missing wrapper is the game on Windows' own Direct3D, not a foreign client; it is what a start
+                // retried without it leaves until the next file check puts it back. Only a swapped one is a threat.
+                if (Translation.Contains(path, StringComparer.OrdinalIgnoreCase)) continue;
+                return path;
+            }
 
             var actual = await BlobStore.HashFileAsync(full);
-            if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase)) return path;
+            if (actual.Equals(expected, StringComparison.OrdinalIgnoreCase)) continue;
+            // The engine without our signature, on a computer that needed it (PlainEngine): that exact file and no other.
+            if (path.Equals(PlainEngine.ManifestPath, StringComparison.OrdinalIgnoreCase) && PlainEngine.Accepts(gameDir, actual)) continue;
+            return path;
         }
         return null;
     }
