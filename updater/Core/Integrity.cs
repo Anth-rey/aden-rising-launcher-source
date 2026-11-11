@@ -54,7 +54,7 @@ public static class Integrity
             var actual = await BlobStore.HashFileAsync(full);
             if (actual.Equals(expected, StringComparison.OrdinalIgnoreCase)) continue;
             // The engine without our signature, on a computer that needed it (PlainEngine): that exact file and no other.
-            if (path.Equals(PlainEngine.ManifestPath, StringComparison.OrdinalIgnoreCase) && PlainEngine.Accepts(gameDir, actual)) continue;
+            if (PlainEngine.Accepts(gameDir, path, actual)) continue;
             return path;
         }
         return null;

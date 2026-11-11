@@ -43,6 +43,12 @@ public static class Install
         if (string.Equals(Path.GetFullPath(running), Path.GetFullPath(target), StringComparison.OrdinalIgnoreCase))
             return target;
 
+#if DEBUG
+        // A debug build is a bare stub that needs the build folder beside it; copied over the installed launcher it
+        // leaves one that does nothing when clicked (2026-11-10).
+        return target;
+#endif
+#pragma warning disable CS0162
         try
         {
             if (!Directory.Exists(gameDir)) return running;

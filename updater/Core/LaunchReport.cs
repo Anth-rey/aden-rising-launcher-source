@@ -67,7 +67,7 @@ public static class LaunchReport
     /// id and nothing about the player: the Windows version, the two builds, the way tried and the outcome.
     /// Sent once and forgotten; a failure to send is nobody's problem.
     /// </summary>
-    public static void ReportStart(string clientBuild, string tried, string outcome)
+    public static void ReportStart(string clientBuild, string tried, string outcome, object? diagnostics = null)
     {
         if (Key.Length == 0) return;
         _ = Task.Run(async () =>
@@ -83,6 +83,7 @@ public static class LaunchReport
                     windows = Environment.OSVersion.Version.ToString(),
                     tried,
                     outcome,
+                    diagnostics,
                 });
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 using var response = await Ipv4Http.SendAsync(request, cts.Token);

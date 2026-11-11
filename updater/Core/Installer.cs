@@ -104,10 +104,10 @@ public sealed class Installer(string gameDir, BlobStore blobs)
 
             // The engine without our signature, on a computer that needed it: not a damaged file to fetch again.
             // Should the signed engine itself change, the new one is installed and the launcher strips it again.
-            if (exists && PlainEngine.InUse(gameDir) && entry.Path.Equals(PlainEngine.ManifestPath, StringComparison.OrdinalIgnoreCase)
+            if (exists && PlainEngine.InUse(gameDir) && PlainEngine.Covers(entry.Path)
                 && previous is not null && previous.TryGetValue(entry.Path, out var signedBefore)
                 && signedBefore.Sha256.Equals(entry.Sha256, StringComparison.OrdinalIgnoreCase)
-                && PlainEngine.Accepts(gameDir, await BlobStore.HashFileAsync(full, ct)))
+                && PlainEngine.Accepts(gameDir, entry.Path, await BlobStore.HashFileAsync(full, ct)))
             {
                 upToDate++;
                 checkedFiles?.Report(++done);

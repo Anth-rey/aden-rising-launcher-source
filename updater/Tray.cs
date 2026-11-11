@@ -245,9 +245,12 @@ public partial class MainWindow
     /// </summary>
     private void GameStuck(Running run)
     {
+        object? diagnostics = null;
         try
         {
             using var p = Process.GetProcessById(run.Pid);
+            // The first stuck start tells us what this computer and the stuck game look like, before it is closed.
+            if (run.Mode == StartMode.Normal) diagnostics = StartDiagnostics.Collect(p, _gameDir);
             p.Kill();
             // Its files stay locked until it is gone, and the next way may have to replace one (PlainEngine).
             p.WaitForExit(5000);
@@ -274,7 +277,7 @@ public partial class MainWindow
         var next = StartHelp.After(run.Mode, translationInPlace, PlainEngine.InUse(_gameDir) || run.Mode == StartMode.PlainEngine);
         // Made from the installed engine on the spot; a file it cannot be made from leaves nothing to try.
         if (next == StartMode.PlainEngine && !PlainEngine.Use(_gameDir)) next = null;
-        LaunchReport.ReportStart(build, run.Mode.ToString(), next is null ? "stuck-gave-up" : "stuck");
+        LaunchReport.ReportStart(build, run.Mode.ToString(), next is null ? "stuck-gave-up" : "stuck", diagnostics);
 
         if (next is { } mode)
         {
