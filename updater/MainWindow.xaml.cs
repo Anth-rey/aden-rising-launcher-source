@@ -460,7 +460,7 @@ public partial class MainWindow : Window
 
         var progress = new Progress<(long Done, long Total)>(p =>
         {
-            var fraction = p.Total <= 0 ? 0 : Math.Clamp((double)p.Done / p.Total, 0, 1);
+            var fraction = p.Total <= 0 ? 0 : Compat.Clamp((double)p.Done / p.Total, 0, 1);
             Percent.Text = $"{(int)(fraction * 100)}%";
             Fill.BeginAnimation(WidthProperty, null);
             Fill.Width = TrackRow.Width * fraction;
@@ -584,7 +584,7 @@ public partial class MainWindow : Window
         var fraction = total == 0 ? 1 : (double)n / total;
         Percent.Text = $"{(int)(fraction * 100)}%";
         Fill.BeginAnimation(WidthProperty, null);
-        Fill.Width = TrackRow.Width * Math.Clamp(fraction, 0, 1);
+        Fill.Width = TrackRow.Width * Compat.Clamp(fraction, 0, 1);
         LeftStat.Text = $"{n:N0} of {total:N0} files checked";
     }
 
@@ -609,13 +609,13 @@ public partial class MainWindow : Window
 
         void Paint()
         {
-            var fraction = Math.Clamp(plan.Bytes == 0 ? 1 : (double)done / plan.Bytes, 0, 1);
+            var fraction = Compat.Clamp(plan.Bytes == 0 ? 1 : (double)done / plan.Bytes, 0, 1);
             var left = Math.Max(0, plan.Bytes - done);
             Percent.Text = $"{(int)(fraction * 100)}%";
 
             // Animated rather than set, so the bar glides instead of stepping.
             Fill.BeginAnimation(WidthProperty, new DoubleAnimation(
-                TrackRow.Width * Math.Clamp(fraction, 0, 1), TimeSpan.FromMilliseconds(240))
+                TrackRow.Width * Compat.Clamp(fraction, 0, 1), TimeSpan.FromMilliseconds(240))
             { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
 
             LeftStat.Text = $"{files:N0} of {plan.Work.Count:N0} files   ·   {Human(Math.Min(done, plan.Bytes))} of {Human(plan.Bytes)}";
@@ -760,6 +760,12 @@ public partial class MainWindow : Window
 
     private void Browse_Click(object sender, RoutedEventArgs e)
     {
+#if NETFRAMEWORK
+        var picked = FolderPicker.Pick(new System.Windows.Interop.WindowInteropHelper(this).Handle, "Where should Aden Rising go?",
+            Directory.Exists(_gameDir) ? _gameDir : @"C:\");
+        if (picked is null) return;
+        var chosen = picked;
+#else
         var dialog = new Microsoft.Win32.OpenFolderDialog
         {
             Title = "Where should Aden Rising go?",
@@ -768,6 +774,7 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) != true) return;
 
         var chosen = dialog.FolderName;
+#endif
         // Picking "Games" should not scatter the client across it.
         if (!Path.GetFileName(chosen.TrimEnd(Path.DirectorySeparatorChar))
                 .Equals("Aden Rising", StringComparison.OrdinalIgnoreCase))
@@ -860,7 +867,7 @@ public partial class MainWindow : Window
         string[] units = ["B", "KB", "MB", "GB"];
         var u = 0;
         while (bytes >= 1024 && u < units.Length - 1) { bytes /= 1024; u++; }
-        return string.Create(CultureInfo.InvariantCulture, $"{bytes:0.#} {units[u]}");
+        return FormattableString.Invariant($"{bytes:0.#} {units[u]}");
     }
 
     private static string Remaining(double bytesLeft, double bps)
@@ -868,7 +875,7 @@ public partial class MainWindow : Window
         var seconds = bytesLeft / Math.Max(1, bps);
         if (seconds < 60) return Plural((int)seconds, "second");
         if (seconds < 3600) return Plural((int)(seconds / 60), "minute");
-        return string.Create(CultureInfo.InvariantCulture, $"{seconds / 3600:0.#} hours");
+        return FormattableString.Invariant($"{seconds / 3600:0.#} hours");
 
         static string Plural(int n, string unit) => n == 1 ? $"1 {unit}" : $"{n} {unit}s";
     }

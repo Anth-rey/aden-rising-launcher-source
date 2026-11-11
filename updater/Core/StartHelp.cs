@@ -11,8 +11,8 @@ public enum StartMode
     OneCore,
     /// <summary>Without the graphics wrapper (Installer.RefuseTranslation), the way the game ran before it had one.</summary>
     NoTranslation,
-    /// <summary>With the engine as it shipped, without our code signature (PlainEngine).</summary>
-    PlainEngine,
+    /// <summary>With NCsoft's engine without its 2007 protector (AltEngine), for computers where ours never opens a window.</summary>
+    AltEngine,
 }
 
 /// <summary>
@@ -47,12 +47,12 @@ public static class StartHelp
     }
 
     /// <summary>The next thing to try after <paramref name="failed"/>, or null when nothing is left.</summary>
-    public static StartMode? After(StartMode failed, bool translationInPlace, bool plainEngineInUse) => failed switch
+    public static StartMode? After(StartMode failed, bool translationInPlace, bool altEngineInUse) => failed switch
     {
         // The harmless one first: it changes nothing on disk.
         StartMode.Normal => StartMode.OneCore,
         StartMode.OneCore when translationInPlace => StartMode.NoTranslation,
-        StartMode.OneCore or StartMode.NoTranslation when !plainEngineInUse => StartMode.PlainEngine,
+        StartMode.OneCore or StartMode.NoTranslation when !altEngineInUse => StartMode.AltEngine,
         _ => null,
     };
 }

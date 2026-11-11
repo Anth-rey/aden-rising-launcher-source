@@ -7,6 +7,12 @@ namespace AdenRising.Updater;
 
 public partial class App : Application
 {
+#if NETFRAMEWORK
+    // Same behaviour as the main build when the window moves to a monitor with another scale: WPF on the .NET
+    // Framework only follows per-monitor DPI with this switch, and it has to be set before the first window exists.
+    static App() => AppContext.SetSwitch("Switch.System.Windows.DoNotScaleForDpiChanges", false);
+#endif
+
     /// <summary>
     /// One launcher at a time. A second start -- the player's double-click, or
     /// L2.exe sending them here -- brings the running one to the front and
@@ -26,6 +32,11 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+#if NETFRAMEWORK
+        // Windows 7 and 8 do not offer TLS 1.2 to .NET Framework programs unless asked, and our file host accepts
+        // nothing older.
+        System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
+#endif
         // The window is written in English, so its numbers should read in
         // English too: on a Czech machine the default turned 73.1 MB/s into
         // "73,1 MB/s" while every word around it stayed English.
@@ -107,7 +118,7 @@ public partial class App : Application
     {
         try
         {
-            var me = Environment.ProcessId;
+            var me = Core.Compat.ProcessId;
             foreach (var p in Process.GetProcessesByName(Process.GetCurrentProcess().ProcessName))
             {
                 using (p)

@@ -175,6 +175,58 @@ public static class LaunchReport
     /// a site reachable over IPv6 would otherwise record an address the game
     /// server never sees, and the two could never be matched.
     /// </summary>
+#if NETFRAMEWORK
+    // The .NET Framework has no connect callback; binding every connection to the site to a local IPv4 endpoint
+    // does the same: an IPv6 address of the site cannot be reached from it, so the IPv4 one is used.
+    private static readonly HttpClient Ipv4Http = new(new Ipv4Handler()) { Timeout = TimeSpan.FromSeconds(20) };
+
+    /// <summary>
+    /// The .NET Framework cannot be told which address family to connect with, so the two small reports go out by
+    /// hand: an IPv4 socket, TLS for the site's name, one HTTP/1.1 request, and the status line read back. The callers
+    /// only look at the status code.
+    /// </summary>
+    private sealed class Ipv4Handler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            var uri = request.RequestUri!;
+            var body = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+            var addresses = await System.Net.Dns.GetHostAddressesAsync(uri.Host).ConfigureAwait(false);
+            var v4 = addresses.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                     ?? throw new System.Net.WebException($"{uri.Host} has no IPv4 address");
+
+            using var client = new System.Net.Sockets.TcpClient(System.Net.Sockets.AddressFamily.InterNetwork) { NoDelay = true };
+            using (ct.Register(() => client.Close()))
+                await client.ConnectAsync(v4, uri.Port).ConfigureAwait(false);
+            using var tls = new System.Net.Security.SslStream(client.GetStream());
+            await tls.AuthenticateAsClientAsync(uri.Host, null, System.Security.Authentication.SslProtocols.Tls12, true).ConfigureAwait(false);
+
+            var head = new System.Text.StringBuilder();
+            head.Append($"{request.Method.Method} {uri.PathAndQuery} HTTP/1.1\r\nHost: {uri.Host}\r\nConnection: close\r\n");
+            foreach (var h in request.Headers) head.Append($"{h.Key}: {string.Join(",", h.Value)}\r\n");
+            if (request.Content is not null)
+                foreach (var h in request.Content.Headers) head.Append($"{h.Key}: {string.Join(",", h.Value)}\r\n");
+            head.Append($"Content-Length: {body.Length}\r\n\r\n");
+            var headBytes = System.Text.Encoding.ASCII.GetBytes(head.ToString());
+            await tls.WriteAsync(headBytes, 0, headBytes.Length, ct).ConfigureAwait(false);
+            await tls.WriteAsync(body, 0, body.Length, ct).ConfigureAwait(false);
+            await tls.FlushAsync(ct).ConfigureAwait(false);
+
+            // The status line is all anyone reads; the rest is drained so the server sees a clean close.
+            var reply = new MemoryStream();
+            var buffer = new byte[4096];
+            int read;
+            while ((read = await tls.ReadAsync(buffer, 0, buffer.Length, ct).ConfigureAwait(false)) > 0)
+                reply.Write(buffer, 0, read);
+            var text = System.Text.Encoding.ASCII.GetString(reply.ToArray());
+            var firstLine = text.Split(new[] { "\r\n" }, 2, StringSplitOptions.None)[0];
+            var parts = firstLine.Split(' ');
+            if (parts.Length < 2 || !int.TryParse(parts[1], out var status))
+                throw new System.Net.WebException("no HTTP status in the reply");
+            return new HttpResponseMessage((System.Net.HttpStatusCode)status) { RequestMessage = request };
+        }
+    }
+#else
     private static readonly HttpClient Ipv4Http = new(new SocketsHttpHandler
     {
         ConnectCallback = async (context, ct) =>
@@ -195,6 +247,7 @@ public static class LaunchReport
         },
     })
     { Timeout = TimeSpan.FromSeconds(20) };
+#endif
 
     /// <summary>
     /// Seconds between attempts. One report used to be sent once and forgotten;
@@ -350,8 +403,8 @@ public static class LaunchReport
         sb.Append('|').Append(Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"));
         sb.Append('|').Append(Environment.ProcessorCount);
 
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
-        return Convert.ToHexString(hash, 0, 16).ToLowerInvariant();
+        var hash = Compat.Sha256(Encoding.UTF8.GetBytes(sb.ToString()));
+        return Compat.Hex(hash, 0, 16).ToLowerInvariant();
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

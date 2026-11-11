@@ -41,7 +41,7 @@ public static class SelfUpdate
 {
     /// <summary>Where this launcher is running from. `Assembly.Location` is
     /// empty in a single-file build, so it cannot be used here.</summary>
-    public static string ExePath => Environment.ProcessPath
+    public static string ExePath => Compat.ProcessPath
         ?? throw new InvalidOperationException("cannot tell where this launcher is running from");
 
     public static Version Current =>
@@ -186,8 +186,12 @@ public static class SelfUpdate
     private static void Relaunch()
     {
         var start = new ProcessStartInfo(ExePath) { UseShellExecute = true };
+#if NETFRAMEWORK
+        start.Arguments = string.Join(" ", Environment.GetCommandLineArgs().Skip(1).Select(a => "\"" + a.Replace("\"", "\\\"") + "\""));
+#else
         foreach (var arg in Environment.GetCommandLineArgs().Skip(1))
             start.ArgumentList.Add(arg);
+#endif
 
         Process.Start(start);
     }
@@ -204,8 +208,8 @@ public static class SelfUpdate
         using var response = await http.GetAsync(from, HttpCompletionOption.ResponseHeadersRead, ct);
         response.EnsureSuccessStatusCode();
 
-        await using var source = await response.Content.ReadAsStreamAsync(ct);
-        await using var target = new FileStream(
+        using var source = await response.Content.ReadAsStreamAsync(ct);
+        using var target = new FileStream(
             to, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20, FileOptions.Asynchronous);
 
         var buffer = new byte[1 << 20];

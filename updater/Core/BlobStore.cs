@@ -59,7 +59,7 @@ public sealed class BlobStore(HttpClient http, Uri baseUri, string cacheDir)
                         $"downloaded content does not match its hash (wanted {sha256[..12]}, got {actual[..12]})");
                 }
 
-                File.Move(partial, final, overwrite: true);
+                Compat.Move(partial, final, overwrite: true);
                 return final;
             }
             catch (OperationCanceledException) { throw; }
@@ -97,13 +97,13 @@ public sealed class BlobStore(HttpClient http, Uri baseUri, string cacheDir)
             have = 0;
         }
 
-        await using var source = await response.Content.ReadAsStreamAsync(ct);
+        using var source = await response.Content.ReadAsStreamAsync(ct);
 
         // Deliberately not FileMode.Append. Combined with async I/O, Windows
         // re-establishes the end of the file on every write, and the measured
         // cost was roughly twentyfold -- 2 MB/s here where the same connection
         // fetched at 50 MB/s outside the updater. Open once, seek once, stream.
-        await using var target = new FileStream(
+        using var target = new FileStream(
             partial, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None,
             BufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
         if (have > 0) target.Seek(have, SeekOrigin.Begin);
@@ -125,10 +125,10 @@ public sealed class BlobStore(HttpClient http, Uri baseUri, string cacheDir)
 
     public static async Task<string> HashFileAsync(string path, CancellationToken ct = default)
     {
-        await using var stream = new FileStream(
+        using var stream = new FileStream(
             path, FileMode.Open, FileAccess.Read, FileShare.Read,
             BufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        var hash = await SHA256.HashDataAsync(stream, ct);
-        return Convert.ToHexStringLower(hash);
+        var hash = await Compat.Sha256Async(stream, ct);
+        return Compat.HexLower(hash);
     }
 }

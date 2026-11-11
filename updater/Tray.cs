@@ -95,6 +95,8 @@ public partial class MainWindow
                 RetryButton.Margin = new Thickness(16, 0, 0, 0);
                 return;
             }
+            // A computer that needs the alternative engine keeps it, an update of ours included.
+            if (AltEngine.InUse(_gameDir)) await AltEngine.UseAsync(_gameDir, _installer.Blobs);
             LaunchGame();
         }
         finally
@@ -124,9 +126,6 @@ public partial class MainWindow
         // only thing we do here is make sure a fresh install has a settings
         // file at all, written for the monitor the player is looking at.
         GameOptions.Correct(_gameDir, Display.ScreenFor(new WindowInteropHelper(this).Handle));
-
-        // A computer that needs the engine without our signature keeps it, an update of the signed one included.
-        if (mode == StartMode.PlainEngine || PlainEngine.InUse(_gameDir)) PlainEngine.Use(_gameDir);
 
         // This start is ours: the client checks for the token and refuses to run without it.
         Presence.Grant(_gameDir);
@@ -243,7 +242,7 @@ public partial class MainWindow
     /// works is remembered for this computer and
     /// reported to us; only when nothing is left does the player get a message.
     /// </summary>
-    private void GameStuck(Running run)
+    private async void GameStuck(Running run)
     {
         object? diagnostics = null;
         try
@@ -252,7 +251,7 @@ public partial class MainWindow
             // The first stuck start tells us what this computer and the stuck game look like, before it is closed.
             if (run.Mode == StartMode.Normal) diagnostics = StartDiagnostics.Collect(p, _gameDir);
             p.Kill();
-            // Its files stay locked until it is gone, and the next way may have to replace one (PlainEngine).
+            // Its files stay locked until it is gone, and the next way may have to replace one (AltEngine).
             p.WaitForExit(5000);
         }
         catch { /* gone already, or out of our reach */ }
@@ -272,11 +271,11 @@ public partial class MainWindow
         if (!run.Trial && run.Mode != StartMode.Normal) StartHelp.Save(_gameDir, StartMode.Normal);
         // Taking the graphics wrapper off was a guess; it did not help, so it goes back with the next file check.
         if (run.Trial && run.Mode == StartMode.NoTranslation) _installer.AcceptTranslation();
-        // So was the engine without our signature: the signed one goes back.
-        if (run.Trial && run.Mode == StartMode.PlainEngine) PlainEngine.Drop(_gameDir);
-        var next = StartHelp.After(run.Mode, translationInPlace, PlainEngine.InUse(_gameDir) || run.Mode == StartMode.PlainEngine);
-        // Made from the installed engine on the spot; a file it cannot be made from leaves nothing to try.
-        if (next == StartMode.PlainEngine && !PlainEngine.Use(_gameDir)) next = null;
+        // So was the alternative engine: ours goes back.
+        if (run.Trial && run.Mode == StartMode.AltEngine) AltEngine.Drop(_gameDir);
+        var next = StartHelp.After(run.Mode, translationInPlace, AltEngine.InUse(_gameDir) || run.Mode == StartMode.AltEngine);
+        // Fetched from our file host; one that cannot be fetched or written leaves nothing to try.
+        if (next == StartMode.AltEngine && !await AltEngine.UseAsync(_gameDir, _installer.Blobs)) next = null;
         LaunchReport.ReportStart(build, run.Mode.ToString(), next is null ? "stuck-gave-up" : "stuck", diagnostics);
 
         if (next is { } mode)
@@ -302,7 +301,7 @@ public partial class MainWindow
     /// <summary>Keeps a starting game on one processor core; <see cref="ReleaseCores"/> undoes it once its window is up.</summary>
     private static void HoldToOneCore(Process game)
     {
-        try { game.ProcessorAffinity = 1; }
+        try { game.ProcessorAffinity = (IntPtr)1; }
         catch { /* started with more rights than ours, or gone: then this way is simply the plain one */ }
     }
 
@@ -379,7 +378,7 @@ public partial class MainWindow
             if ((Environment.GetEnvironmentVariable("ADENRISING_TEST_STUCK") ?? "").Split(',').Contains(run.Mode.ToString())) shown = false;
 #endif
             if (shown) { _windowSeen.Add(run.Pid); WindowAppeared(run); }
-            else if (Stopwatch.GetElapsedTime(run.StartedAt) > StuckAfter) stuck ??= run;
+            else if (Compat.Elapsed(run.StartedAt) > StuckAfter) stuck ??= run;
         }
         if (stuck is { } s)
         {
@@ -404,7 +403,7 @@ public partial class MainWindow
 
         // Dying within a few seconds is not somebody quitting, it is the game
         // failing to start -- exactly when a player needs telling why.
-        var diedAtOnce = finished.Any(f => Stopwatch.GetElapsedTime(f.StartedAt) < TimeSpan.FromSeconds(5));
+        var diedAtOnce = finished.Any(f => Compat.Elapsed(f.StartedAt) < TimeSpan.FromSeconds(5));
         if (!diedAtOnce) return;
 
         // Almost always the graphics translation layer, on a machine whose
@@ -499,7 +498,7 @@ public partial class MainWindow
 
             foreach (var g in games)
             {
-                try { await g.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
+                try { await Task.WhenAny(g.WaitForExitAsync(), Task.Delay(TimeSpan.FromSeconds(5))); } catch { }
             }
 
             return !games.Any(Alive);

@@ -2,7 +2,8 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <TargetFrameworks>net9.0-windows;net462</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
     <UseWPF>true</UseWPF>
     <!-- Only for NotifyIcon: WPF has no tray icon of its own, and the shell
          API by hand would be a lot of P/Invoke for something WinForms already
@@ -17,7 +18,7 @@
     <!-- What the launcher compares against launcher/latest.json to decide
          whether to replace itself. Raise it for every released build, or
          players keep the one they have. -->
-    <Version>1.0.29</Version>
+    <Version>1.0.30</Version>
   </PropertyGroup>
 
   <!-- The key the launcher shows the website with each window report. Kept
@@ -80,6 +81,15 @@
     <Resource Include="Assets\Fonts\*.otf" />
   </ItemGroup>
 
+  <!-- The build for every Windows from 7 up: .NET Framework 4.6.2 is part of every Windows 10 since 1607 and of Windows 11, and installs on 7 and 8.
+       Its few missing pieces are in Core/Compat.cs and Polyfills48.cs; Costura packs the libraries into the one .exe. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net462'">
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <PackageReference Include="System.Net.Http.Json" Version="8.0.1" />
+    <PackageReference Include="Costura.Fody" Version="5.7.0" PrivateAssets="all" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
 </Project>
 
 

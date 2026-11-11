@@ -66,9 +66,7 @@ public static class Signing
         var payload = Convert.FromBase64String(envelope.Payload);
         var signature = Convert.FromBase64String(envelope.Signature);
 
-        using var key = ECDsa.Create();
-        key.ImportSubjectPublicKeyInfo(Convert.FromBase64String(PublicKey), out _);
-        if (!key.VerifyData(payload, signature, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation))
+        if (!Verify(payload, signature))
             throw new InvalidDataException("the signature is not the release key's");
 
         var inner = JsonSerializer.Deserialize<SignedPayload>(payload, Options)
@@ -80,17 +78,29 @@ public static class Signing
 
         return inner;
     }
+
+    /// <summary>An ES256 (P-256, SHA-256) signature in the 64-byte r||s form, checked against <see cref="PublicKey"/>.</summary>
+    private static bool Verify(byte[] payload, byte[] signature)
+    {
+        var spki = Convert.FromBase64String(PublicKey);
+#if NETFRAMEWORK
+        // The SubjectPublicKeyInfo of a P-256 key ends with the 65-byte point 04|X|Y; the .NET Framework takes it as a
+        // CNG blob instead: "ECS1", the coordinate length, then X and Y.
+        if (spki.Length < 65 || spki[spki.Length - 65] != 0x04) return false;
+        var blob = new byte[8 + 64];
+        new byte[] { 0x45, 0x43, 0x53, 0x31, 32, 0, 0, 0 }.CopyTo(blob, 0);
+        Array.Copy(spki, spki.Length - 64, blob, 8, 64);
+        using var cng = CngKey.Import(blob, CngKeyBlobFormat.EccPublicBlob);
+        using var key = new ECDsaCng(cng);
+        return key.VerifyData(payload, signature, HashAlgorithmName.SHA256);
+#else
+        using var key = ECDsa.Create();
+        key.ImportSubjectPublicKeyInfo(spki, out _);
+        return key.VerifyData(payload, signature, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+#endif
+    }
 }
 
-/// <summary>
-/// The newest issue date accepted for each kind of document, so a copy of an
-/// older signed document -- genuine, but superseded -- cannot be served in
-/// place of the current one. A rollback we mean is republished, and so
-/// re-signed with a fresh date, by the tools.
-///
-/// Per user rather than per game folder: it is about which releases this
-/// person has already seen.
-/// </summary>
 public static class TrustLog
 {
     private static string Path_ => Path.Combine(
@@ -128,4 +138,5 @@ public static class TrustLog
         }
         catch { /* forgetting is safe: it only means an older document could be accepted again */ }
     }
+
 }

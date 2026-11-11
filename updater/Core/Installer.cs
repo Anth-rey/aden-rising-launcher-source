@@ -21,6 +21,9 @@ public sealed record InstallPlan(
 
 public sealed class Installer(string gameDir, BlobStore blobs)
 {
+    /// <summary>Where client files are fetched from and cached (AltEngine fetches through it too).</summary>
+    public BlobStore Blobs => blobs;
+
     private string StateDir => Path.Combine(gameDir, ".updater");
     private string InstalledManifestPath => Path.Combine(StateDir, "installed-manifest.json");
     private string NoTranslationPath => Path.Combine(StateDir, "no-d3d9-translation");
@@ -102,12 +105,12 @@ public sealed class Installer(string gameDir, BlobStore blobs)
             var full = Path.Combine(gameDir, entry.LocalPath);
             var exists = File.Exists(full);
 
-            // The engine without our signature, on a computer that needed it: not a damaged file to fetch again.
-            // Should the signed engine itself change, the new one is installed and the launcher strips it again.
-            if (exists && PlainEngine.InUse(gameDir) && PlainEngine.Covers(entry.Path)
-                && previous is not null && previous.TryGetValue(entry.Path, out var signedBefore)
-                && signedBefore.Sha256.Equals(entry.Sha256, StringComparison.OrdinalIgnoreCase)
-                && PlainEngine.Accepts(gameDir, entry.Path, await BlobStore.HashFileAsync(full, ct)))
+            // The alternative engine, on a computer that needed it (AltEngine): not a damaged file to fetch again.
+            // Should our engine itself change, the new one is installed and the launcher swaps it out again.
+            if (exists && AltEngine.InUse(gameDir) && entry.Path.Equals(AltEngine.ManifestPath, StringComparison.OrdinalIgnoreCase)
+                && previous is not null && previous.TryGetValue(entry.Path, out var oursBefore)
+                && oursBefore.Sha256.Equals(entry.Sha256, StringComparison.OrdinalIgnoreCase)
+                && AltEngine.Accepts(gameDir, entry.Path, await BlobStore.HashFileAsync(full, ct)))
             {
                 upToDate++;
                 checkedFiles?.Report(++done);
@@ -212,7 +215,7 @@ public sealed class Installer(string gameDir, BlobStore blobs)
         var removals = new List<string>();
         if (installed is null) return removals;
 
-        var stillWanted = wanted.Files.Select(f => f.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var stillWanted = new HashSet<string>(wanted.Files.Select(f => f.Path), StringComparer.OrdinalIgnoreCase);
 
         foreach (var was in installed.Files)
         {
@@ -261,7 +264,7 @@ public sealed class Installer(string gameDir, BlobStore blobs)
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
 
                 var blob = await blobs.EnsureAsync(sha256, first.Size, onBytes, ct);
-                File.Move(blob, target, overwrite: true);
+                Compat.Move(blob, target, overwrite: true);
                 onFile?.Invoke(Interlocked.Increment(ref written));
 
                 // Same bytes wanted at another path too: copy locally rather
@@ -292,7 +295,7 @@ public sealed class Installer(string gameDir, BlobStore blobs)
         // Only once every file is in place: a record written earlier would claim
         // an install that did not finish, and the next launch would trust it.
         Directory.CreateDirectory(StateDir);
-        await File.WriteAllTextAsync(
+        await Compat.WriteAllTextAsync(
             InstalledManifestPath,
             JsonSerializer.Serialize(plan.Manifest, new JsonSerializerOptions { WriteIndented = false }),
             ct);
@@ -309,7 +312,7 @@ public sealed class Installer(string gameDir, BlobStore blobs)
     public async Task RecordAsync(Manifest manifest, CancellationToken ct = default)
     {
         Directory.CreateDirectory(StateDir);
-        await File.WriteAllTextAsync(
+        await Compat.WriteAllTextAsync(
             InstalledManifestPath,
             JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = false }),
             ct);
