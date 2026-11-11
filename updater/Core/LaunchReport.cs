@@ -58,6 +58,9 @@ public static class LaunchReport
     private static readonly string Endpoint =
         (Override("ADENRISING_SITE_URL") ?? "https://adenrising.com").TrimEnd('/') + "/api/launcher/launch";
 
+    private static readonly string SignalsEndpoint =
+        (Override("ADENRISING_SITE_URL") ?? "https://adenrising.com").TrimEnd('/') + "/api/launcher/signals";
+
     private static readonly string StartEndpoint =
         (Override("ADENRISING_SITE_URL") ?? "https://adenrising.com").TrimEnd('/') + "/api/launcher/start-report";
 
@@ -112,7 +115,8 @@ public static class LaunchReport
     /// </summary>
     private static readonly string[] WatchedProcesses =
     [
-        "adrenaline", "adrenalinebot", "adrenaline_loader", "adrenalinegui",
+        // The bot's own program is Adrenalin.exe, without the final e (vendor's install manual, 2026-11-11).
+        "adrenalin", "adrenaline", "adrenalinebot", "adrenaline_loader", "adrenalinegui",
         "l2tower", "l2walker", "l2w", "l2net", "l2phx", "l2helper", "l2bot",
         "autohotkey", "autohotkeyu64", "autohotkey64", "autohotkeyu32", "autoit3", "autoit3_x64",
         "cheatengine", "cheatengine-x86_64", "cheatengine-i386",
@@ -132,6 +136,8 @@ public static class LaunchReport
             var reported = new HashSet<int>();
             string? hwid = null;
             var pid = game.Id;
+            var lastLook = Stopwatch.GetTimestamp();
+            var told = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             while (IsAlive(pid))
             {
                 try
@@ -141,6 +147,15 @@ public static class LaunchReport
                         if (!reported.Add(port)) continue;
                         hwid ??= Hwid();
                         await ReportAsync(hwid, clientBuild, game, gameDir, port);
+                    }
+
+                    // A bot is usually started after the game, where the start report cannot see it: look again
+                    // every LiveLookEvery while the window plays, and tell the server about anything new.
+                    if (Compat.Elapsed(lastLook) >= LiveLookEvery)
+                    {
+                        lastLook = Stopwatch.GetTimestamp();
+                        hwid ??= Hwid();
+                        await LiveLookAsync(hwid, game, gameDir, told);
                     }
                 }
                 catch
@@ -341,7 +356,66 @@ public static class LaunchReport
 
     // ---- what the launcher can see around the game -------------------------
 
+    private static readonly TimeSpan LiveLookEvery = TimeSpan.FromSeconds(90);
+
+    /// <summary>The bot programs and foreign client libraries found now that were not reported yet, sent to the site.</summary>
+    private static async Task LiveLookAsync(string hwid, Process game, string gameDir, HashSet<string> told)
+    {
+        var (procs, modules) = Look(game, gameDir);
+        var newProcs = procs.Where(p => told.Add("p:" + p)).ToList();
+        var newModules = (modules ?? []).Where(m => told.Add("m:" + m)).ToList();
+        if (newProcs.Count == 0 && newModules.Count == 0) return;
+
+        var port = LocalPortsToGameServer(game.Id).FirstOrDefault();
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, SignalsEndpoint);
+            request.Headers.Add("x-launcher-key", Key);
+            request.Content = JsonContent.Create(new { hwid, localPort = port, procs = newProcs, modules = newModules });
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var response = await Ipv4Http.SendAsync(request, cts.Token);
+            Log($"live signals ({string.Join(", ", newProcs.Concat(newModules))}): {(int)response.StatusCode}");
+            if (!response.IsSuccessStatusCode)
+                foreach (var name in newProcs) told.Remove("p:" + name);
+        }
+        catch (Exception ex)
+        {
+            // Not sent: forget them so the next look tries again.
+            foreach (var name in newProcs) told.Remove("p:" + name);
+            foreach (var name in newModules) told.Remove("m:" + name);
+            Log($"live signals failed: {ex.Message}");
+        }
+    }
+
     private static object Signals(Process game, string gameDir)
+    {
+        var (procs, modules) = Look(game, gameDir);
+        return new { procs, modules, modulesReadable = modules is not null };
+    }
+
+    /// <summary>Words in a program's own version details (product, description, company) that name a bot.</summary>
+    private static readonly string[] BotBrands = ["adrenalin", "l2tower", "l2walker", "l2net", "l2phx"];
+
+    /// <summary>
+    /// A bot under another file name: Adrenaline's updater renames itself to random letters after its first run. The
+    /// version details inside the file keep its real name. Programs in Windows' own folder are skipped; one this
+    /// launcher may not open (another user's, or one with more rights) simply is not looked at.
+    /// </summary>
+    private static string? Branded(Process p)
+    {
+        try
+        {
+            var path = p.MainModule?.FileName;
+            if (string.IsNullOrEmpty(path) || path!.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.Windows), StringComparison.OrdinalIgnoreCase))
+                return null;
+            var info = FileVersionInfo.GetVersionInfo(path);
+            var text = $"{info.ProductName} {info.FileDescription} {info.CompanyName} {info.OriginalFilename} {info.InternalName}".ToLowerInvariant();
+            return BotBrands.FirstOrDefault(b => text.Contains(b));
+        }
+        catch { return null; }
+    }
+
+    private static (List<string> procs, List<string>? modules) Look(Process game, string gameDir)
     {
         var procs = new List<string>();
         try
@@ -352,6 +426,7 @@ public static class LaunchReport
                 {
                     var name = p.ProcessName;
                     if (WatchedProcesses.Contains(name, StringComparer.OrdinalIgnoreCase)) procs.Add(name);
+                    else if (Branded(p) is { } brand) procs.Add($"{brand} ({name})");
                 }
                 finally { p.Dispose(); }
             }
@@ -379,7 +454,7 @@ public static class LaunchReport
         }
         catch { modules = null; }
 
-        return new { procs, modules, modulesReadable = modules is not null };
+        return (procs, modules);
     }
 
     // ---- this computer -----------------------------------------------------
