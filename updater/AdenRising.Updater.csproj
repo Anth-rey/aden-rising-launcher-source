@@ -18,7 +18,7 @@
     <!-- What the launcher compares against launcher/latest.json to decide
          whether to replace itself. Raise it for every released build, or
          players keep the one they have. -->
-    <Version>1.0.32</Version>
+    <Version>1.0.33</Version>
   </PropertyGroup>
 
   <!-- The key the launcher shows the website with each window report. Kept

@@ -448,7 +448,9 @@ public partial class MainWindow : Window
     private async Task<bool> TrySelfUpdateAsync()
     {
         var baseUrl = new Uri(LauncherUrl);
-        var release = await SelfUpdate.CheckAsync(_http, baseUrl);
+        // Short on purpose: the window is empty until this answers, and a missed update is caught on the next start.
+        using var check = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var release = await SelfUpdate.CheckAsync(_http, baseUrl, check.Token);
         if (release is null) return false;
 
         ShowWorking("Launcher", "Please wait", "Updating the ", "launcher");

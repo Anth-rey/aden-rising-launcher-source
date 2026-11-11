@@ -65,9 +65,13 @@ namespace AdenRising.Updater
         public static Task<string> GetStringAsync(this HttpClient http, Uri url, CancellationToken ct) =>
             GetString(http, url.ToString(), ct);
 
+        // Small JSON documents only. A connection that stalls must not hold the window empty for the client's whole
+        // ten-minute timeout (2026-11-11: 1.0.31 sat blank on its self-update check); 30 s is far beyond any real one.
         private static async Task<string> GetString(HttpClient http, string url, CancellationToken ct)
         {
-            using var response = await http.GetAsync(url, ct).ConfigureAwait(false);
+            using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            limit.CancelAfter(TimeSpan.FromSeconds(30));
+            using var response = await http.GetAsync(url, limit.Token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
         }
