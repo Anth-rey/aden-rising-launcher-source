@@ -36,6 +36,10 @@ public partial class App : Application
         // Windows 7 and 8 do not offer TLS 1.2 to .NET Framework programs unless asked, and our file host accepts
         // nothing older.
         System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
+        // The .NET Framework allows two connections per server unless told otherwise; the installer fetches eight
+        // files at once (Installer.Parallelism), and two would make a new install several times slower.
+        System.Net.ServicePointManager.DefaultConnectionLimit = 32;
+        System.Net.ServicePointManager.Expect100Continue = false;
 #endif
         // The window is written in English, so its numbers should read in
         // English too: on a Czech machine the default turned 73.1 MB/s into
